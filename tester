@@ -1,0 +1,89 @@
+import time
+import sys
+import select
+# msvcrt is a Windows-specific module for handling keyboard input.
+# We'll use a try-except block to import it so the code can
+# run on other operating systems as well.
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
+
+class Stopwatch:
+    def __init__(self):
+        self.start_time = None
+        self.elapsed_time = 0
+        self.is_running = False
+
+    def start(self):
+        if not self.is_running:
+            self.start_time = time.time() - self.elapsed_time
+            self.is_running = True
+            print("Stopwatch started.")
+
+    def stop(self):
+        if self.is_running:
+            self.elapsed_time = time.time() - self.start_time
+            self.is_running = False
+            mins, secs = divmod(int(self.elapsed_time), 60)
+            print(f"\nStopwatch stopped at {mins:02d}:{int(secs):02d}")
+
+
+    def reset(self):
+        self.start_time = None
+        self.elapsed_time = 0
+        if not self.is_running:
+             print("Stopwatch reset.")
+        else:
+             self.is_running = False
+             print("\nStopwatch reset.")
+
+
+    def get_elapsed(self):
+        if self.is_running:
+            return time.time() - self.start_time
+        return self.elapsed_time
+
+def main():
+    stopwatch = Stopwatch()
+    print("Commands: (s)tart, s(t)op, (r)eset, (q)uit")
+
+    while True:
+        # Update and display the time if the stopwatch is running
+        if stopwatch.is_running:
+            elapsed = stopwatch.get_elapsed()
+            mins, secs = divmod(int(elapsed), 60)
+            # Use \r to return the cursor to the start of the line,
+            # allowing us to overwrite the previous time.
+            print(f"\rRunning: {mins:02d}:{secs:02d}", end="", flush=True)
+
+        # Check for user input without blocking
+        command = None
+        if sys.platform == 'win32' and msvcrt:
+            if msvcrt.kbhit():
+                command = msvcrt.getch().decode('utf-8').lower()
+        else:
+            # select.select checks if there's anything to read from stdin
+            if select.select([sys.stdin], [], [], 0)[0]:
+                command = sys.stdin.readline().strip().lower()
+
+        if command:
+            if command == 's':
+                if not stopwatch.is_running:
+                    stopwatch.start()
+                else:
+                    # If already running, treat 's' as stop
+                    stopwatch.stop()
+            elif command == 't':
+                stopwatch.stop()
+            elif command == 'r':
+                stopwatch.reset()
+            elif command == 'q':
+                print("\nExiting stopwatch.")
+                break
+        
+        # A small delay to prevent the loop from using too much CPU
+        time.sleep(0.1)
+
+if __name__ == "__main__":
+    main()
