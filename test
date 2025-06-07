@@ -1,0 +1,62 @@
+import time
+import msvcrt
+import sys
+import select
+
+class Stopwatch:
+    def __init__(self):
+        self.start_time = None
+        self.elapsed_time = 0
+        self.isrunning = False
+
+    def start(self):
+        if not self.isrunning:
+            self.start_time = time.time()
+            self.isrunning = True
+
+    def stop(self):
+        if self.isrunning:
+            self.elapsed_time += time.time() - self.start_time
+            print(f"Stopwatch has stopped at {self.get_elapsed():.2f} seconds")
+            self.isrunning = False
+
+    def reset(self):
+        self.elapsed_time = 0
+        self.isrunning = False
+
+    def get_elapsed(self):
+        if not self.isrunning:
+            return self.elapsed_time
+        return self.elapsed_time + (time.time() - self.start_time)
+
+stopwatch = Stopwatch()
+
+
+# Check for user input without blocking
+if sys.platform == 'win32':
+    if msvcrt.kbhit():
+        command = input("\nCommand: ").strip().lower()
+else:
+    if select.select([sys.stdin], [], [], 0)[0]:
+        command = sys.stdin.readline().strip().lower()
+
+while True:
+    command = input("please enter one of the commands ... \nstart\nstop\nreset\nquit\n\n>")
+    if command == "start":
+        stopwatch.start()
+    elif command == "stop":
+        stopwatch.stop()
+    elif command == "reset":
+        stopwatch.reset()
+    elif command == "quit":
+        break
+    elif command:
+        print("Invalid command. Valid commands: start, stop, reset, quit")
+
+    # Display updates
+    if stopwatch.isrunning:
+        self_elapsed = stopwatch.get_elapsed()
+        mins, secs = divmod(int(self_elapsed), 60)
+        print(f"\rRunning: {mins:02d}:{secs:02d} [Press Enter for commands]", end='', flush=True)
+    time.sleep(0.1)  # Small delay to reduce CPU usage                                                                                                      
+

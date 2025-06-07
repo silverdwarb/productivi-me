@@ -1,2 +1,0 @@
-# productivi-me
-personal productivity 
