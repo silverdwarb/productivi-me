@@ -1,156 +1,178 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { onMount, onDestroy } from 'svelte';
+  import { appWindow } from '@tauri-apps/api/window'; 
+  
+  // Stopwatch state
+  let startTime: number | null = null;
+  let elapsedTime: number = 0; // Stored in milliseconds
+  let isRunning: boolean = false;
+  let intervalId: number | undefined; 
+  let displayTime: string = '00:00'; // The string to display in the UI
 
-  let name = $state("");
-  let greetMsg = $state("");
+  // Function to update the display string
+  function updateDisplay(): void {
+    let currentElapsed = elapsedTime;
+    if (isRunning && startTime !== null) {
+      currentElapsed = Date.now() - startTime;
+    }
 
-  async function greet(event: Event) {
-    event.preventDefault();
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    greetMsg = await invoke("greet", { name });
+    const totalSecs = Math.floor(currentElapsed / 1000);
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+
+    displayTime = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
+
+  // Start function (now also called by onMount)
+  function startStopwatch(): void {
+    if (!isRunning) {
+      startTime = Date.now() - elapsedTime; // Resume from elapsed
+      isRunning = true;
+      console.log('Stopwatch started.');
+      // Start the interval to update the display
+      intervalId = setInterval(updateDisplay, 100); // Update every 100ms
+    }
+  }
+
+  // Stop function
+  function stopStopwatch(): void {
+    if (isRunning) {
+      if (startTime !== null) { // Ensure startTime is not null before calculating
+        elapsedTime = Date.now() - startTime;
+      }
+      isRunning = false;
+      console.log('Stopwatch stopped at ' + displayTime); // Use current display time
+      clearInterval(intervalId); // Stop the interval
+      intervalId = undefined; // Clear the interval ID
+    }
+  }
+
+  // Reset function (called by saveCurrentActivity now)
+  function resetStopwatch(): void {
+    stopStopwatch(); // Ensure it's stopped before resetting
+    startTime = null;
+    elapsedTime = 0;
+    isRunning = false; // Explicitly set to false in case stop() wasn't called
+    updateDisplay(); // Reset display to 00:00
+    console.log('Stopwatch reset.');
+  }
+
+  // Modified save function: Now also resets the stopwatch after saving
+  async function saveCurrentActivity(): Promise<void> {
+    // If the stopwatch is currently running, stop it first to get the final elapsed time
+    if (isRunning) {
+        stopStopwatch();
+    }
+    
+    // Only save if there's actual time on the stopwatch
+    if (elapsedTime === 0) {
+        console.warn("No activity duration to save.");
+        // If it's already reset, no need to do anything else
+        if (!isRunning && startTime === null) {
+             console.log("Stopwatch already reset.");
+        } else {
+            resetStopwatch(); // Reset even if no time was recorded, to clear state
+        }
+        return; 
+    }
+
+    // You'd typically prompt the user for the skill title here,
+    // e.g., using a Svelte input field and a confirmation dialog.
+    const skillTitle = "Default Skill"; // Replace with actual input from user
+
+    // Convert elapsedTime (milliseconds) to seconds for your backend
+    const duration_seconds = Math.floor(elapsedTime / 1000);
+
+    try {
+      console.log("Attempting to save activity...");
+      const response = await invoke("save_activity", { 
+          durationSeconds: duration_seconds, 
+          skillTitle: skillTitle 
+      });
+      console.log("Activity saved successfully:", response);
+      
+      // *** NEW BEHAVIOR: Reset stopwatch after successful save ***
+      resetStopwatch(); 
+
+    } catch (error) {
+      console.error("Failed to save activity:", error);
+      // You might want to notify the user about the save failure
+      // And perhaps NOT reset the stopwatch if save failed, so data isn't lost
+    }
+  }
+
+  // Logic for "Save on Quit" (via window close)
+  let unlisten: Function | undefined; 
+
+  onMount(() => {
+    // *** NEW BEHAVIOR: Start stopwatch immediately on page load ***
+    startStopwatch(); // This will auto-start the stopwatch
+
+    // Initial display update
+    updateDisplay(); 
+
+    // Set up the listener for window close request
+    unlisten = appWindow.onCloseRequested(async ({ preventDefault }) => {
+      preventDefault(); // Prevent default close behavior
+
+      console.log("Close requested. Attempting to save current activity...");
+      await saveCurrentActivity(); // Calls the function which now also resets the stopwatch
+
+      // After saving (or attempting to save), proceed to close the window
+      appWindow.close(); 
+    });
+  });
+
+  onDestroy(() => {
+    if (intervalId !== undefined) {
+      clearInterval(intervalId);
+    }
+    if (unlisten) {
+      unlisten(); 
+    }
+  });
 </script>
 
-<main class="container">
-  <h1>Welcome to Tauri + Svelte</h1>
-
-  <div class="row">
-    <a href="https://vitejs.dev" target="_blank">
-      <img src="/vite.svg" class="logo vite" alt="Vite Logo" />
-    </a>
-    <a href="https://tauri.app" target="_blank">
-      <img src="/tauri.svg" class="logo tauri" alt="Tauri Logo" />
-    </a>
-    <a href="https://kit.svelte.dev" target="_blank">
-      <img src="/svelte.svg" class="logo svelte-kit" alt="SvelteKit Logo" />
-    </a>
-  </div>
-  <p>Click on the Tauri, Vite, and SvelteKit logos to learn more.</p>
-
-  <form class="row" onsubmit={greet}>
-    <input id="greet-input" placeholder="Enter a name..." bind:value={name} />
-    <button type="submit">Greet</button>
-  </form>
-  <p>{greetMsg}</p>
-</main>
-
 <style>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.svelte-kit:hover {
-  filter: drop-shadow(0 0 2em #ff3e00);
-}
-
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
-}
-
-.container {
-  margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
-}
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
-  display: flex;
-  justify-content: center;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-h1 {
-  text-align: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
-  cursor: pointer;
-}
-
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
-}
-
-input,
-button {
-  outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
+  main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
   }
-
-  a:hover {
-    color: #24c8db;
+  h1 {
+    font-size: 2rem;
+    color: #333;
   }
-
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
+  .stopwatch-display {
+    font-size: 4rem;
+    font-weight: bold;
+    margin-bottom: 20px;
+    color: #007bff;
   }
-  button:active {
-    background-color: #0f0f0f69;
+  .controls button {
+    margin: 5px;
+    padding: 10px 20px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    background-color: #f0f0f0;
   }
-}
-
+  .controls button:hover {
+    background-color: #e0e0e0;
+  }
 </style>
+
+<main class="container">
+  <h1>hi, welcome</h1>
+  
+  <div class="stopwatch-display">{displayTime}</div>
+
+  <div class="controls">
+    <button on:click={stopStopwatch}>Stop</button>
+    <button on:click={saveCurrentActivity}>Save Activity</button> 
+    </div>
+</main>
